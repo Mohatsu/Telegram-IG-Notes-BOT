@@ -5,23 +5,18 @@ A Telegram bot that manages Instagram Notes across multiple accounts.
 Allows posting, viewing, and deleting Instagram Notes directly from Telegram.
 
 Features:
-- Multi-account support (login to multiple Instagram accounts)
-- Post notes to "Mutual Followers" or "Close Friends" audiences
-- View current notes on each account
+- Multi-account support
+- Post notes to "Mutual Followers" or "Close Friends"
+- View current notes
 - Delete active notes
-- Check recent replies/DMs
-- 2FA support with manual code entry
-- Session persistence (no need to login every time)
-
-Environment Variables Required (in .env):
-- TELEGRAM_BOT_TOKEN: Your Telegram bot token
-- ALLOWED_TELEGRAM_USER_ID: Your Telegram user ID (only you can use the bot)
-- INSTA_ACCOUNTS: Multiple accounts in format: name=username:password|name2=username2:password2
+- Check recent replies
+- 2FA support
+- Session persistence
 
 Setup:
-1. Run login_once.py for each Instagram account to create sessions
-2. Set environment variables in .env
-3. Run this bot: python main.py
+1. Use login_once.py to create session files for each account
+2. Fill .env correctly
+3. Run: python bot.py
 """
 
 import os
@@ -64,10 +59,9 @@ if missing:
         print(f"   ❌ {item} is missing or empty")
     print("\nCurrent raw values:")
     print(f"   TELEGRAM_BOT_TOKEN: {'✅ set' if TELEGRAM_BOT_TOKEN else '❌ empty'}")
-    print(f"   ALLOWED_TELEGRAM_USER_ID: {ALLOWED_USER_ID_STR.strip() if ALLOWED_USER_ID_STR else '❌ empty'}")
+    print(f"   ALLOWED_USER_ID: {ALLOWED_USER_ID_STR.strip() if ALLOWED_USER_ID_STR else '❌ empty'}")
     print(f"   INSTA_ACCOUNTS raw: {repr(INSTA_ACCOUNTS_STR)}")
-    print("\nCorrect format:")
-    print("INSTA_ACCOUNTS=personal=username1:pass!|secreta=username2:pass~!|clememovil=username3:pass!")
+    print("\nFormat: INSTA_ACCOUNTS=personal=username:pass|secreta=user2:pass2")
     print("="*70 + "\n")
     exit(1)
 
@@ -102,7 +96,6 @@ for part in INSTA_ACCOUNTS_STR.split('|'):
 
 if not accounts:
     print("❌ No valid accounts parsed from INSTA_ACCOUNTS.")
-    print("   Use format: name=username:password|name2=username2:password2")
     exit(1)
 
 print(f"✅ Successfully loaded {len(accounts)} Instagram account(s)!\n")
@@ -112,19 +105,7 @@ pending_action = {}
 waiting_for_2fa = None
 
 def get_client(name):
-    """
-    Get or create an Instagram client for the specified account.
-    
-    Attempts to load an existing session from disk. If the session is valid,
-    reuses it. If expired, logs in again with stored credentials.
-    
-    Args:
-        name (str): Account name (key in accounts dict)
-    
-    Returns:
-        Client or None: Authenticated instagrapi Client if login succeeds,
-                       None if 2FA is required or login fails
-    """
+    data = accounts[name]
     if data['client']:
         return data['client']
     
@@ -159,34 +140,26 @@ def get_client(name):
 
 # ==================== Handlers ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handle /start command. Shows help menu with available commands.
-    Only responds to authorized user.
-    """
+    if update.effective_user.id != ALLOWED_USER_ID:
         return
+    
     await update.message.reply_text(
-        "📝 Instagram Notes Bot\n\n"
-        "Commands:\n"
-        "/note <text> → Post note\n"
-        "/note_cf <text> → Post to Close Friends\n"
-        "/current_note → View current note(s)\n"
+        "📝 Instagram Notes Bot Ready!\n\n"
+        "Available Commands:\n\n"
+        "/note <message> → Post to mutual followers\n"
+        "/note_cf <message> → Post to Close Friends\n"
+        "/current_note → Show current note(s)\n"
         "/delete_note → Delete current note\n"
-        "/note_replies → Check recent replies"
+        "/note_replies → Check recent replies\n\n"
+        "Example: /note Hello from Telegram! 🚀"
     )
 
 async def handle_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE, audience=0):
-    """
-    Handle note posting commands (/note and /note_cf).
-    
-    Args:
-        audience (int): 0 for Mutual Followers, 1 for Close Friends
-    
-    If multiple accounts exist, prompts user to select one.
-    If single account, posts directly.
-    """
-    if user_id != ALLOWED_USER_ID: return
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER_ID:
+        return
     if not context.args:
-        await update.message.reply_text("Please add text after the command.")
+        await update.message.reply_text("Please add your note text after the command.")
         return
     text = ' '.join(context.args)
     if len(text) > 60:
@@ -210,21 +183,19 @@ async def handle_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         lines = ["Which account?"]
         for i, name in enumerate(account_list, 1):
             lines.append(f"{i}. {name} (@{accounts[name]['username']})")
-        lines.append("\nReply with the number")
+        lines.append("\nReply with the number (1, 2, 3...)")
         await update.message.reply_text("\n".join(lines))
 
 async def note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /note command - post note to Mutual Followers."""
     await handle_note_command(update, context, audience=0)
 
 async def note_cf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /note_cf command - post note to Close Friends."""
     await handle_note_command(update, context, audience=1)
 
 async def current_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /current_note command - display active notes on all accounts."""
     user_id = update.effective_user.id
-    if user_id != ALLOWED_USER_ID: return
+    if user_id != ALLOWED_USER_ID:
+        return
     lines = ["Current notes:"]
     for i, name in enumerate(account_list, 1):
         cl = get_client(name)
@@ -237,11 +208,15 @@ async def current_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status = f"'{active.text}'" if active else "(none)"
             lines.append(f"{i}. {name} (@{accounts[name]['username']}): {status}")
         except Exception as e:
-            lines.append(f"{i}. {name}: Error")
+            lines.append(f"{i}. {name}: Error - {e}")
     await update.message.reply_text("\n".join(lines))
 
 async def delete_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /delete_note command - remove active note from selected account."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER_ID:
+        return
+
+    if len(account_list) == 1:
         name = account_list[0]
         cl = get_client(name)
         if not cl:
@@ -252,9 +227,9 @@ async def delete_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
             active = next((n for n in notes if n.user.pk == cl.user_id), None)
             if active:
                 cl.delete_note(active.id)
-                await update.message.reply_text("Note deleted.")
+                await update.message.reply_text("Note deleted successfully.")
             else:
-                await update.message.reply_text("No active note.")
+                await update.message.reply_text("No active note to delete.")
         except Exception as e:
             await update.message.reply_text(f"Error: {e}")
     else:
@@ -262,13 +237,13 @@ async def delete_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines = ["Delete note from which account?"]
         for i, name in enumerate(account_list, 1):
             lines.append(f"{i}. {name} (@{accounts[name]['username']})")
-        lines.append("\nReply with number")
+        lines.append("\nReply with the number")
         await update.message.reply_text("\n".join(lines))
 
 async def note_replies(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /note_replies command - show recent DM replies from last 24 hours."""
     user_id = update.effective_user.id
-    if user_id != ALLOWED_USER_ID: return
+    if user_id != ALLOWED_USER_ID:
+        return
     replies_list = []
     for i, name in enumerate(account_list, 1):
         cl = get_client(name)
@@ -283,32 +258,38 @@ async def note_replies(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for msg in reversed(msgs):
                     if msg.timestamp < datetime.now() - timedelta(hours=24):
                         continue
-                    if msg.user_id != cl.user_id:
-                        text = msg.text or "[media/emoji]"
+                    if msg.user_id != cl.user_id:  # Message from someone else
+                        # Robust sender username extraction
+                        sender_username = "unknown"
+                        if hasattr(msg, 'sender') and msg.sender:
+                            sender_username = msg.sender.username
+                        elif hasattr(msg, 'user_id'):
+                            try:
+                                user = cl.user_info(msg.user_id)
+                                sender_username = user.username
+                            except:
+                                sender_username = f"user_{msg.user_id}"
+                        
+                        text = msg.text or "[media/emoji/reel]"
                         time = msg.timestamp.strftime('%H:%M')
-                        recent.append(f"@{msg.sender.username}: {text} ({time})")
+                        recent.append(f"@{sender_username}: {text} ({time})")
             status = "\n".join(recent[-8:]) if recent else "No recent replies"
             replies_list.append(f"{i}. {name} (@{accounts[name]['username']}):\n{status}")
         except Exception as e:
-            replies_list.append(f"{i}. {name}: Error")
-    await update.message.reply_text("📨 Recent replies (last 24h):\n\n" + "\n\n".join(replies_list))
+            replies_list.append(f"{i}. {name}: Error - {str(e)}")
+    await update.message.reply_text("📨 Recent replies/reactions (last 24h):\n\n" + "\n\n".join(replies_list))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handle all text messages from authorized user.
-    
-    Routes to:
-    - 2FA code verification if waiting for 2FA
-    - Account selection if user has pending action
-    """
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
 
-    # 2FA
+    # 2FA handling
     global waiting_for_2fa
     if waiting_for_2fa and user_id == ALLOWED_USER_ID:
         if text.isdigit() and len(text) == 6:
             name = waiting_for_2fa
             data = accounts[name]
-            await update.message.reply_text("Verifying 2FA...")
+            await update.message.reply_text("Verifying 2FA code...")
             try:
                 cl = Client()
                 cl.delay_range = [1, 5]
@@ -316,20 +297,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cl.dump_settings(data['session_file'])
                 accounts[name]['client'] = cl
                 waiting_for_2fa = None
-                await update.message.reply_text(f"2FA success for {name}! Ready.")
+                await update.message.reply_text(f"2FA successful for {name}! Session saved.")
             except Exception as e:
                 waiting_for_2fa = None
                 await update.message.reply_text(f"2FA failed: {str(e)}")
             return
 
-    # Account selection
+    # Account selection for pending actions
     if user_id in pending_action and text.isdigit():
         choice = int(text)
         if 1 <= choice <= len(account_list):
             name = account_list[choice - 1]
             cl = get_client(name)
             if not cl:
-                await update.message.reply_text("Login failed. Send 2FA if prompted.")
+                await update.message.reply_text("Login failed. Send 2FA code if prompted.")
                 return
             action = pending_action.pop(user_id)
             if action['type'] == 'note':
@@ -338,31 +319,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     aud = "Close Friends" if action['audience'] == 1 else "Mutual Followers"
                     await update.message.reply_text(f"Posted to {aud} (@{accounts[name]['username']}):\n'{note.text}'")
                 except Exception as e:
-                    await update.message.reply_text(f"Failed: {e}")
+                    await update.message.reply_text(f"Failed: {str(e)}")
             elif action['type'] == 'delete_note':
                 try:
                     notes = cl.get_notes()
                     active = next((n for n in notes if n.user.pk == cl.user_id), None)
                     if active:
                         cl.delete_note(active.id)
-                        await update.message.reply_text("Note deleted.")
+                        await update.message.reply_text("Note deleted successfully.")
                     else:
-                        await update.message.reply_text("No note to delete.")
+                        await update.message.reply_text("No active note to delete.")
                 except Exception as e:
                     await update.message.reply_text(f"Error: {e}")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Log all errors from the bot."""
-    logger.error("Error:", exc_info=context.error)
+    logger.error("Exception occurred:", exc_info=context.error)
 
 # ==================== Main ====================
 def main():
-    """
-    Initialize and start the Telegram bot.
-    
-    Sets up command handlers and message handlers, then starts polling
-    for updates from Telegram servers.
-    """
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
