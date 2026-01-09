@@ -87,8 +87,8 @@ If you have multiple accounts configured, the bot will prompt you to select whic
 ```
 Which account?
 1. personal (@username1)
-2. secreta (@username2)
-3. clememovil (@username3)
+2. work (@username2)
+3. backup (@username3)
 
 Reply with the number
 ```
