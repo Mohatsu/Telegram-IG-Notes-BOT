@@ -34,7 +34,7 @@ Create a `.env` file in the project root with your credentials:
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ALLOWED_TELEGRAM_USER_ID=your_telegram_user_id_here
-INSTA_ACCOUNTS=personal=username1:password1|secreta=username2:password2|clememovil=username3:password3
+INSTA_ACCOUNTS=personal=username1:password1|work=username2:password2|backup=username3:password3
 ```
 
 **Format for INSTA_ACCOUNTS:**
